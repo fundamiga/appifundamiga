@@ -46,27 +46,47 @@ export const exportarAExcel = async (
 
   // ── Hoja 3: Resumen del Día ─────────────────────────────────────────────
   const totalDon = registros.reduce((s, r) => s + r.donaciones.valor, 0);
-  const totalFact = registros.reduce((s, r) => s + (r.facturaElectronica?.valor || 0), 0);
-  const filaResumen = registros.map((r, i) => ({
+  const totalFact = registros.reduce(
+    (s, r) => s + (r.facturaElectronica?.valor || 0),
+    0
+  );
+
+  // 👇 TIPADO CORRECTO AQUÍ
+  const filaResumen: {
+    '#': number;
+    Fecha: string;
+    Ubicación: string;
+    Vehículo: "carros" | "motos" | null;
+    Donantes: number;
+    'Total Donaciones': number;
+    'Total Facturas': number;
+    'Total Registro': number;
+  }[] = registros.map((r, i) => ({
     '#': i + 1,
     Fecha: r.fecha,
     Ubicación: r.ubicacion,
     Vehículo: r.tipoParqueadero,
-    'Donantes': r.donaciones.cantidadDonantes,
+    Donantes: r.donaciones.cantidadDonantes,
     'Total Donaciones': r.donaciones.valor,
     'Total Facturas': r.facturaElectronica?.valor ?? 0,
-    'Total Registro': r.donaciones.valor + (r.facturaElectronica?.valor ?? 0),
+    'Total Registro':
+      r.donaciones.valor + (r.facturaElectronica?.valor ?? 0),
   }));
+
   filaResumen.push({
     '#': 0,
     Fecha: '',
     Ubicación: 'TOTAL GENERAL',
-    Vehículo: '',
-    Donantes: registros.reduce((s, r) => s + r.donaciones.cantidadDonantes, 0),
+    Vehículo: null, // 👈 ya válido
+    Donantes: registros.reduce(
+      (s, r) => s + r.donaciones.cantidadDonantes,
+      0
+    ),
     'Total Donaciones': totalDon,
     'Total Facturas': totalFact,
     'Total Registro': totalDon + totalFact,
   });
+
   const wsResumen = XLSX.utils.json_to_sheet(filaResumen);
   wsResumen['!cols'] = [
     { wch: 4 }, { wch: 12 }, { wch: 20 }, { wch: 10 },
@@ -75,6 +95,7 @@ export const exportarAExcel = async (
   XLSX.utils.book_append_sheet(wb, wsResumen, 'Resumen del Día');
 
   // ── Descargar ───────────────────────────────────────────────────────────
-  const fecha = registros[0]?.fecha ?? new Date().toISOString().split('T')[0];
+  const fecha =
+    registros[0]?.fecha ?? new Date().toISOString().split('T')[0];
   XLSX.writeFile(wb, `Fundamiga_Informe_${fecha}.xlsx`);
 };
