@@ -1,31 +1,41 @@
 'use client';
 import Image from 'next/image';
 import React, { useState } from 'react';
-import { Plus, FileText, CheckCircle, FileSpreadsheet, ArrowRight, Download } from 'lucide-react';
+import { Plus, FileText, Shield, TrendingUp, Download, Trash2, ArrowRight, CheckCircle, FileSpreadsheet, History } from 'lucide-react';
 import { FormularioRegistro } from '@/components/formRegis';
+import { ListaRegistros } from '@/components/ListaRegistro';
 import { InformeConPanelEdicion } from '@/components/InformeConPanelEdicion';
 import { BotonAccesoAdmin } from '@/components/BotonAccesoAdmin';
 import { ResumenDia } from '@/components/ResumenDia';
 import { HistorialDias } from '@/components/HistorialDias';
+import { LiquidacionPersonal } from '@/components/LiquidacionPersonal';
 import { useRegistroDiario } from '@/hooks/useRegistroDiario';
 import { useHistorial, EntradaHistorial } from '@/hooks/useHistorial';
 import { useFirmas } from '@/hooks/UseFirmas';
-import { RegistroDiario, ItemFactura } from '@/types';
+import { RegistroDiario, ItemTabla, ItemFactura } from '@/types';
 import DonacionesErrorBoundary from '@/components/DonacionesErrorBoundary';
 import { exportarAExcel } from '@/utils/exportarExcel';
+
+interface InformeData {
+  id: string;
+  registros: RegistroDiario[];
+  itemsFacturas: ItemFactura[];
+  fechaCreacion: Date;
+}
 
 export default function SistemaControlDonaciones() {
   const [mostrarInforme, setMostrarInforme] = useState(false);
   const [mostrarMultiplesInformes, setMostrarMultiplesInformes] = useState(false);
-  const [registroSeleccionado, setRegistroSeleccionado] = useState<number | null>(null);
-  const [informeHistorial, setInformeHistorial] = useState<{ registros: RegistroDiario[]; itemsFacturas: ItemFactura[] } | null>(null);
+  const [informes, setInformes] = useState<InformeData[]>([]);
+  const [informeActual, setInformeActual] = useState<InformeData | null>(null);
   const [toastExito, setToastExito] = useState<string | null>(null);
+  const [informeHistorial, setInformeHistorial] = useState<{registros: RegistroDiario[], itemsFacturas: ItemFactura[]} | null>(null);
 
   const mostrarToast = (msg: string) => {
     setToastExito(msg);
     setTimeout(() => setToastExito(null), 3000);
   };
-
+  
   const {
     registros,
     registroActual,
@@ -36,6 +46,7 @@ export default function SistemaControlDonaciones() {
     handleItemsFacturasChange,
     handleFirmaChange,
     agregarRegistro,
+    eliminarRegistro,
     reiniciarFormulario
   } = useRegistroDiario();
 
@@ -43,38 +54,103 @@ export default function SistemaControlDonaciones() {
   const { historial, guardarEnHistorial, eliminarEntrada } = useHistorial();
 
   const handleAgregarRegistro = () => {
+    const registroParaInforme: RegistroDiario = JSON.parse(JSON.stringify(registroActual));
+    const itemsFacturasParaInforme = itemsFacturas.map(item => ({ ...item }));
     const exito = agregarRegistro();
     if (!exito) {
       alert('Por favor completa todos los campos obligatorios');
       return;
     }
-    mostrarToast('✅ Registro agregado correctamente');
+
+    const nuevoInforme: InformeData = {
+      id: Date.now().toString(),
+      registros: [registroParaInforme],
+      itemsFacturas: itemsFacturasParaInforme,
+      fechaCreacion: new Date()
+    };
+
+    setInformes(prev => [...prev, nuevoInforme]);
+    setInformeActual(nuevoInforme);
+    mostrarToast(`✅ Registro "${registroParaInforme.ubicacion}" agregado correctamente`);
   };
 
   const handleGenerarInforme = () => {
     const tieneRegistroActual = !!registroActual.ubicacion && registroActual.donaciones.valor > 0;
-    if (!tieneRegistroActual && registros.length === 0) {
+
+    if (!tieneRegistroActual && informes.length === 0) {
       alert('Debes agregar al menos un registro');
       return;
     }
+
     if (tieneRegistroActual) {
+      const registroParaInforme: RegistroDiario = JSON.parse(JSON.stringify(registroActual));
+      const itemsFacturasParaInforme = itemsFacturas.map(item => ({ ...item }));
       const exito = agregarRegistro();
       if (!exito) {
         alert('Por favor completa todos los campos obligatorios');
         return;
       }
-      // Mostrar solo el último registro recién agregado
-      setRegistroSeleccionado(registros.length); // será el índice del nuevo registro
-    } else {
-      // Si no hay registro actual, mostrar el último agregado
-      setRegistroSeleccionado(registros.length - 1);
+
+      const nuevoInforme: InformeData = {
+        id: Date.now().toString(),
+        registros: [registroParaInforme],
+        itemsFacturas: itemsFacturasParaInforme,
+        fechaCreacion: new Date()
+      };
+
+      setInformes(prev => [...prev, nuevoInforme]);
+      setInformeActual(nuevoInforme);
+      setMostrarInforme(true);
+      return;
     }
+
+    const ultimoInforme = informes[informes.length - 1];
+    setInformeActual(ultimoInforme);
+    setMostrarInforme(true);
   };
 
   const handleNuevoInforme = () => {
-    if (registros.length > 0) guardarEnHistorial(registros);
+    // Guardar en historial antes de limpiar
+    if (registros.length > 0) {
+      guardarEnHistorial(registros, itemsFacturas);
+    }
     reiniciarFormulario();
     setMostrarInforme(false);
+    setInformeActual(null);
+    setInformes([]);
+  };
+
+  const handleVerInforme = (informe: InformeData) => {
+    setInformeActual(informe);
+    setMostrarInforme(true);
+  };
+
+  const handleEliminarInforme = (id: string) => {
+    if (!confirm('¿Estás seguro de que quieres eliminar este informe? Esta acción no se puede deshacer.')) return;
+    setInformes(informes.filter(inf => inf.id !== id));
+    if (informeActual?.id === id) {
+      setMostrarInforme(false);
+      setInformeActual(null);
+    }
+  };
+
+  const handleActualizarRegistrosInforme = (
+    registrosActualizados: RegistroDiario[], 
+    itemsActualizados: ItemTabla[],
+    itemsFacturasActualizados: ItemFactura[]
+  ) => {
+    if (!informeActual) return;
+    
+    const informeActualizado = {
+      ...informeActual,
+      registros: registrosActualizados,
+      itemsFacturas: itemsFacturasActualizados
+    };
+    
+    setInformeActual(informeActualizado);
+    setInformes(informes.map(inf => 
+      inf.id === informeActual.id ? informeActualizado : inf
+    ));
   };
 
   const handleDescargarExcel = async () => {
@@ -82,71 +158,49 @@ export default function SistemaControlDonaciones() {
       alert('No hay registros para exportar');
       return;
     }
-    const todasLasFacturas = registros.flatMap(r => r.itemsFacturas ?? []);
-    await exportarAExcel(registros, todasLasFacturas);
+    await exportarAExcel(registros, itemsFacturas);
     mostrarToast('📊 Archivo Excel descargado correctamente');
   };
 
   const handleVerInformeHistorial = (entrada: EntradaHistorial) => {
-    const todasLasFacturas = entrada.registros.flatMap(r => {
-      // Si el registro tiene itemsFacturas guardados, usarlos
-      if (r.itemsFacturas && r.itemsFacturas.length > 0) return r.itemsFacturas;
-      // Si no, pero tiene facturaElectronica con valor, construir items desde ahí
-      if (r.facturaElectronica && r.facturaElectronica.valor > 0) {
-        const cantidad = r.facturaElectronica.cantidadPersonas || 1;
-        const valorPorPersona = Math.round(r.facturaElectronica.valor / cantidad);
-        return Array.from({ length: cantidad }, (_, i) => ({
-          item: i + 1,
-          donante: 'ANÓNIMO',
-          documento: '',
-          medio: 'FACTURA ELECTRÓNICA',
-          valor: valorPorPersona,
-          reciboN: '',
-          observaciones: 'SIN OBSERVACIONES',
-        }));
-      }
-      return [];
-    });
-    setInformeHistorial({ registros: entrada.registros, itemsFacturas: todasLasFacturas });
+    setInformeHistorial({ registros: entrada.registros, itemsFacturas: entrada.itemsFacturas });
     setMostrarInforme(true);
   };
 
   const handleDescargarPDFMultiple = () => {
-    if (registros.length === 0) {
-      alert('No hay registros para descargar');
+    if (informes.length === 0) {
+      alert('No hay informes para descargar');
       return;
     }
     setMostrarMultiplesInformes(true);
-    setTimeout(() => { window.print(); }, 500);
+    setTimeout(() => {
+      window.print();
+    }, 500);
   };
 
-  // Vista: Todos los informes en PDF (uno por registro, con salto de página)
   if (mostrarMultiplesInformes) {
     return (
       <div className="bg-white min-h-screen">
-        {registros.map((reg, idx) => {
-          const facturas = reg.itemsFacturas && reg.itemsFacturas.length > 0
-            ? reg.itemsFacturas
-            : reg.facturaElectronica && reg.facturaElectronica.valor > 0
-              ? Array.from({ length: reg.facturaElectronica.cantidadPersonas || 1 }, (_, i) => ({
-                  item: i + 1, donante: 'ANÓNIMO', documento: '',
-                  medio: 'FACTURA ELECTRÓNICA',
-                  valor: Math.round(reg.facturaElectronica!.valor / (reg.facturaElectronica!.cantidadPersonas || 1)),
-                  reciboN: '', observaciones: 'SIN OBSERVACIONES',
-                }))
-              : [];
-          return (
-            <div key={idx} style={{ pageBreakAfter: idx < registros.length - 1 ? 'always' : 'avoid' }}>
-              <InformeConPanelEdicion
-                registros={[reg]}
-                itemsFacturas={facturas}
-                firmasExternas={firmas}
-                onNuevoInforme={() => setMostrarMultiplesInformes(false)}
-                onActualizarRegistros={() => {}}
-              />
-            </div>
-          );
-        })}
+        {informes.map((informe, idx) => (
+          <div key={informe.id} style={{ pageBreakAfter: idx < informes.length - 1 ? 'always' : 'avoid' }}>
+            <InformeConPanelEdicion 
+              registros={informe.registros}
+              itemsFacturas={informe.itemsFacturas}
+              firmasExternas={firmas}
+              onNuevoInforme={() => {
+                setMostrarMultiplesInformes(false);
+                setMostrarInforme(false);
+              }}
+              onActualizarRegistros={(registrosActualizados, itemsActualizados, itemsFacturasActualizados) => {
+                setInformes(informes.map(inf => 
+                  inf.id === informe.id 
+                    ? { ...inf, registros: registrosActualizados, itemsFacturas: itemsFacturasActualizados }
+                    : inf
+                ));
+              }}
+            />
+          </div>
+        ))}
         <button
           onClick={() => setMostrarMultiplesInformes(false)}
           className="fixed top-4 left-4 bg-emerald-600 hover:bg-emerald-700 text-white py-2 px-6 rounded-xl shadow-lg print:hidden font-bold transition-all active:scale-95"
@@ -157,59 +211,17 @@ export default function SistemaControlDonaciones() {
     );
   }
 
-  // Vista: Informe individual de un registro desde el card
-  if (registroSeleccionado !== null && registros[registroSeleccionado]) {
-    const reg = registros[registroSeleccionado];
-    const facturas = reg.itemsFacturas && reg.itemsFacturas.length > 0
-      ? reg.itemsFacturas
-      : reg.facturaElectronica && reg.facturaElectronica.valor > 0
-        ? Array.from({ length: reg.facturaElectronica.cantidadPersonas || 1 }, (_, i) => ({
-            item: i + 1, donante: 'ANÓNIMO', documento: '',
-            medio: 'FACTURA ELECTRÓNICA',
-            valor: Math.round(reg.facturaElectronica!.valor / (reg.facturaElectronica!.cantidadPersonas || 1)),
-            reciboN: '', observaciones: 'SIN OBSERVACIONES',
-          }))
-        : [];
-    return (
-      <DonacionesErrorBoundary key="informe-individual" onResetReal={() => setRegistroSeleccionado(null)}>
-        <>
-          <InformeConPanelEdicion
-            registros={[reg]}
-            itemsFacturas={facturas}
-            firmasExternas={firmas}
-            onNuevoInforme={() => setRegistroSeleccionado(null)}
-            onActualizarRegistros={() => {}}
-          />
-          <BotonAccesoAdmin />
-        </>
-      </DonacionesErrorBoundary>
-    );
-  }
-
-  // Vista: Informe (desde Generar Informe o historial)
-  if (mostrarInforme && (registros.length > 0 || informeHistorial)) {
-    const regsMostrar = informeHistorial ? informeHistorial.registros : registros;
-    const factMostrar = regsMostrar.flatMap(r => {
-      if (r.itemsFacturas && r.itemsFacturas.length > 0) return r.itemsFacturas;
-      if (r.facturaElectronica && r.facturaElectronica.valor > 0) {
-        const cantidad = r.facturaElectronica.cantidadPersonas || 1;
-        const valorPorPersona = Math.round(r.facturaElectronica.valor / cantidad);
-        return Array.from({ length: cantidad }, (_, i) => ({
-          item: i + 1,
-          donante: 'ANÓNIMO',
-          documento: '',
-          medio: 'FACTURA ELECTRÓNICA',
-          valor: valorPorPersona,
-          reciboN: '',
-          observaciones: 'SIN OBSERVACIONES',
-        }));
-      }
-      return [];
-    });
+  if (mostrarInforme && (informeActual || informeHistorial)) {
+    const regsMostrar = informeHistorial ? informeHistorial.registros : informeActual!.registros;
+    const factMostrar = informeHistorial ? informeHistorial.itemsFacturas : informeActual!.itemsFacturas;
     return (
       <DonacionesErrorBoundary
-        key="informe"
-        onResetReal={() => { setMostrarInforme(false); setInformeHistorial(null); }}
+        key={mostrarInforme ? 'informe' : 'formulario'}
+        onResetReal={() => {
+          setMostrarInforme(false);
+          setInformeActual(null);
+          setInformeHistorial(null);
+        }}
       >
         <>
           <InformeConPanelEdicion
@@ -218,10 +230,11 @@ export default function SistemaControlDonaciones() {
             firmasExternas={firmas}
             onNuevoInforme={() => {
               setMostrarInforme(false);
+              setInformeActual(null);
               setInformeHistorial(null);
               if (!informeHistorial) handleNuevoInforme();
             }}
-            onActualizarRegistros={() => {}}
+            onActualizarRegistros={informeHistorial ? () => {} : handleActualizarRegistrosInforme}
           />
           <BotonAccesoAdmin />
         </>
@@ -338,70 +351,75 @@ export default function SistemaControlDonaciones() {
                   <span>Generar Informe</span>
                   <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
                 </button>
+
+                <button
+                  onClick={handleDescargarExcel}
+                  className="flex-1 group relative bg-white hover:bg-green-50 text-green-700 py-4 px-8 rounded-2xl font-black text-lg flex items-center justify-center gap-3 shadow-sm border border-green-200 transition-all duration-300 active:scale-[0.98]"
+                >
+                  <FileSpreadsheet size={22} strokeWidth={2.5} />
+                  <span>Exportar Excel</span>
+                </button>
               </div>
             </div>
           </div>
 
-          {/* Cards de registros del día actual */}
-          {registros.length > 0 && (
-            <div className="space-y-6">
+          {/* Historial de Informes */}
+          {informes.length > 0 && (
+            <div className="space-y-8 pb-10">
               <div className="flex items-center justify-between px-2">
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 bg-yellow-400 rounded-2xl flex items-center justify-center shadow-lg shadow-yellow-100">
-                    <FileText size={24} className="text-yellow-900" />
+                    <TrendingUp size={24} className="text-yellow-900" />
                   </div>
                   <div>
-                    <h3 className="text-2xl font-black text-slate-800 tracking-tight">Registros del Día</h3>
-                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{registros.length} registro{registros.length !== 1 ? 's' : ''} agregado{registros.length !== 1 ? 's' : ''}</p>
+                    <h3 className="text-2xl font-black text-slate-800 tracking-tight">Historial del Día</h3>
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{informes.length} Informes listos</p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={handleDescargarPDFMultiple}
-                    className="bg-white hover:bg-emerald-50 text-emerald-700 py-3 px-6 rounded-2xl text-xs font-black transition-all flex items-center gap-2 border border-emerald-100 shadow-sm"
-                  >
-                    <Download size={16} />
-                    Descargar Todo (PDF)
-                  </button>
-                  <button
-                    onClick={handleDescargarExcel}
-                    title="Exportar a Excel"
-                    className="bg-white hover:bg-green-50 text-green-700 py-3 px-4 rounded-2xl text-xs font-black transition-all flex items-center gap-2 border border-green-100 shadow-sm"
-                  >
-                    <FileSpreadsheet size={16} />
-                    Excel
-                  </button>
-                </div>
+                <button
+                  onClick={handleDescargarPDFMultiple}
+                  className="bg-white hover:bg-emerald-50 text-emerald-700 py-3 px-6 rounded-2xl text-xs font-black transition-all flex items-center gap-3 border border-emerald-100 shadow-sm"
+                >
+                  <Download size={18} />
+                  Descargar Todo (PDF)
+                </button>
               </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {registros.map((reg, index) => (
-                  <div key={index} className="group bg-white rounded-3xl p-6 shadow-sm border border-slate-100 hover:shadow-2xl hover:shadow-emerald-100/30 transition-all duration-500">
-                    <div className="flex items-start justify-between mb-4">
+                {informes.map((informe, index) => (
+                  <div key={informe.id} className="group bg-white rounded-3xl p-6 shadow-sm border border-slate-100 hover:shadow-2xl hover:shadow-emerald-100/30 transition-all duration-500">
+                    <div className="flex items-start justify-between mb-6">
                       <div className="p-3 bg-emerald-50 rounded-2xl text-emerald-600 group-hover:bg-emerald-500 group-hover:text-white transition-all duration-500">
                         <FileText size={20} />
                       </div>
                       <div className="text-right">
-                        <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full uppercase tracking-tighter">#{index + 1}</span>
-                        <p className="text-[11px] font-bold text-slate-400 uppercase mt-1">{reg.tipoParqueadero}</p>
+                        <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full uppercase tracking-tighter">Informe #{index + 1}</span>
+                        <p className="text-[11px] font-bold text-slate-400 uppercase mt-2">{new Date(informe.fechaCreacion).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })}</p>
                       </div>
                     </div>
-                    <p className="text-sm font-black text-slate-700 mb-1">{reg.ubicacion}</p>
-                    <p className="text-[11px] font-bold text-slate-400 mb-4">{reg.donaciones.cantidadDonantes} donantes · {reg.fecha}</p>
-                    <div className="flex justify-between items-end border-t border-slate-50 pt-3">
-                      <span className="text-xs font-bold text-slate-400 uppercase">Total</span>
-                      <span className="text-xl font-black text-slate-800">${(reg.donaciones.valor + (reg.facturaElectronica?.valor || 0)).toLocaleString('es-CO')}</span>
+                    
+                    <div className="space-y-4 mb-8">
+                      <div className="flex justify-between items-end border-b border-slate-50 pb-3">
+                        <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Total</span>
+                        <span className="text-2xl font-black text-slate-800">${informe.registros.reduce((sum, reg) => sum + reg.donaciones.valor, 0).toLocaleString()}</span>
+                      </div>
                     </div>
-                    <button
-                      onClick={() => setRegistroSeleccionado(index)}
-                      className="w-full mt-4 bg-slate-900 text-white py-2.5 rounded-2xl text-xs font-black hover:bg-emerald-600 transition-all flex items-center justify-center gap-2"
-                    >
-                      Ver Detalles <ArrowRight size={14} />
-                    </button>
+
+                    <div className="flex gap-3">
+                      <button onClick={() => handleVerInforme(informe)} className="flex-1 bg-slate-900 text-white py-3 rounded-2xl text-xs font-black hover:bg-emerald-600 transition-all flex items-center justify-center gap-2">
+                        Ver Detalles <ArrowRight size={14} />
+                      </button>
+                      <button onClick={() => handleEliminarInforme(informe.id)} className="p-3 bg-red-50 text-red-500 hover:bg-red-500 hover:text-white rounded-2xl transition-all">
+                        <Trash2 size={18} />
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
             </div>
           )}
+          {/* Liquidación de Personal */}
+          <LiquidacionPersonal />
 
           {/* Historial de días anteriores */}
           <HistorialDias
