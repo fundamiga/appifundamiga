@@ -109,16 +109,16 @@ export default function SistemaControlDonaciones() {
     setMostrarInforme(true);
   };
 
-  const handleNuevoInforme = () => {
-    // Guardar en historial antes de limpiar
-    if (registros.length > 0) {
-      guardarEnHistorial(registros, itemsFacturas);
-    }
-    reiniciarFormulario();
-    setMostrarInforme(false);
-    setInformeActual(null);
-    setInformes([]);
-  };
+ const handleNuevoInforme = () => {
+  if (registros.length > 0) {
+    guardarEnHistorial(registros, itemsFacturas);
+  }
+
+  reiniciarFormulario();
+  setMostrarInforme(false);
+  setInformeActual(null);
+  setInformes([]);
+};
 
   const handleVerInforme = (informe: InformeData) => {
     setInformeActual(informe);
